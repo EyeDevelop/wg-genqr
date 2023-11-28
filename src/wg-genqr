@@ -17,6 +17,8 @@ print_help() {
     echo "                        If not specified, this script will generate a private key."
     echo "  -i, --ip-address    : Client IP address in the tunnel. With CIDR."
     echo "                        Example: 192.168.0.1/32"
+    echo "  --dns               : Set DNS servers for this client."
+    echo "                        Default: 1.1.1.1, 8.8.8.8"
     echo
     echo "Endpoint options:"
     echo "  -e, --endpoint      : Endpoint to connect to."
@@ -56,6 +58,7 @@ READ_PRIVATE_KEY=0
 PRIVATE_KEY=""
 
 CLIENT_ADDR=""
+DNS_SERVERS="1.1.1.1, 8.8.8.8"
 
 ENDPOINT=""
 ENDPOINT_ADDR=""
@@ -84,6 +87,12 @@ while [[ "$#" -gt 0 ]]; do
 
         -i|--ip-address)
             CLIENT_ADDR="$2"
+            shift
+            shift
+            ;;
+
+        --dns)
+            DNS_SERVERS="$2"
             shift
             shift
             ;;
@@ -138,6 +147,7 @@ cat << EOF > "$TMP_CONFIG"
 [Interface]
 Address = $CLIENT_ADDR
 PrivateKey = $PRIVATE_KEY
+DNS = $DNS_SERVERS
 
 [Peer]
 Endpoint = $ENDPOINT
