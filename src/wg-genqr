@@ -1,0 +1,161 @@
+#!/bin/bash
+
+set -e
+
+print_help() {
+    echo "Usage: $0 [<args>]"
+    echo
+    echo "Available arguments:"
+    echo "  -h, --help          : Shows this page"
+    echo
+    echo "Tool options:"
+    echo "  -o, --out <out_file>: Specify out file. '-' means stdout."
+    echo "                        Stdout is the default."
+    echo
+    echo "Client options:"
+    echo "  -p, --private-key   : Reads the private key from stdin."
+    echo "                        If not specified, this script will generate a private key."
+    echo "  -i, --ip-address    : Client IP address in the tunnel. With CIDR."
+    echo "                        Example: 192.168.0.1/32"
+    echo
+    echo "Endpoint options:"
+    echo "  -e, --endpoint      : Endpoint to connect to."
+    echo "                        Example: wg.example.org:51820"
+    echo "  --endpoint-pubkey   : Public key for the endpoint."
+    echo "  --endpoint-address  : AllowedIPs for the endpoint."
+    echo "                        Keep in mind that this specifies what is to be routed"
+    echo "                        through the tunnel."
+    echo
+}
+
+check_dependencies() {
+    REQUIRED_TOOLS=( "qrencode" "wg" )
+    for tool in "${REQUIRED_TOOLS[@]}"; do
+        if ! command -v "$tool" &>/dev/null; then
+            echo "Cannot find '$tool' in your PATH. Please install it."
+            exit 1
+        fi
+    done
+}
+
+check_arguments() {
+    REQUIRED_ARGUMENTS=( CLIENT_ADDR ENDPOINT ENDPOINT_ADDR ENDPOINT_PUBKEY )
+    for argument in "${REQUIRED_ARGUMENTS[@]}"; do
+        if [[ -z "${!argument}" ]]; then
+            echo "Missing value for required argument: $argument"
+            exit 1
+        fi
+    done
+}
+
+## Start
+# First, parse the arguments given.
+OUT_FILE="-"
+
+READ_PRIVATE_KEY=0
+PRIVATE_KEY=""
+
+CLIENT_ADDR=""
+
+ENDPOINT=""
+ENDPOINT_ADDR=""
+ENDPOINT_PUBKEY=""
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        # General args
+        -h|--help)
+            print_help
+            exit 0
+            ;;
+
+        # Tool options
+        -o|--out)
+            OUT_FILE="$2"
+            shift
+            shift
+            ;;
+
+        # Client options
+        -p|--private-key)
+            READ_PRIVATE_KEY=1
+            shift
+            ;;
+
+        -i|--ip-address)
+            CLIENT_ADDR="$2"
+            shift
+            shift
+            ;;
+
+        # Endpoint options
+        -e|--endpoint)
+            ENDPOINT="$2"
+            shift
+            shift
+            ;;
+
+        --endpoint-pubkey)
+            ENDPOINT_PUBKEY="$2"
+            shift
+            shift
+            ;;
+
+        --endpoint-address)
+            ENDPOINT_ADDR="$2"
+            shift
+            shift
+            ;;
+
+        # Unknown
+        *)
+            echo "Unknown option. Please use --help"
+            exit 1
+            ;;
+    esac
+done
+
+# Check if all the dependencies exist
+check_dependencies
+
+# Check if all args are given
+check_arguments
+
+# Generate or read a private key
+if [[ "$READ_PRIVATE_KEY" -eq 1 ]]; then
+    read -r PRIVATE_KEY
+else
+    PRIVATE_KEY="$(wg genkey)"
+fi
+
+# Calculate the public key
+PUBLIC_KEY="$(wg pubkey <<< "$PRIVATE_KEY")"
+
+# Generate the config
+TMP_CONFIG="$(mktemp)"
+cat << EOF > "$TMP_CONFIG"
+
+[Interface]
+Address = $CLIENT_ADDR
+PrivateKey = $PRIVATE_KEY
+
+[Peer]
+Endpoint = $ENDPOINT
+AllowedIPs = $ENDPOINT_ADDR
+PublicKey = $ENDPOINT_PUBKEY
+
+EOF
+
+# Generate a QR code.
+if [[ "$OUT_FILE" == "-" ]]; then
+    IMAGE_TYPE="UTF8"
+else
+    IMAGE_TYPE="PNG"
+fi
+
+qrencode -o "$OUT_FILE" -r "$TMP_CONFIG" -t "$IMAGE_TYPE"
+
+# Tell the man his public key!
+echo
+echo
+echo "Public key for this client is: $PUBLIC_KEY"
